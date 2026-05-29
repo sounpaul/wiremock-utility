@@ -1,0 +1,51 @@
+plugins {
+  id 'java'
+  id 'maven-publish'
+  id 'eclipse'
+  id 'idea'
+}
+
+ext {
+  wiremockVersion = '3.13.2'
+  slf4jVersion = '2.0.16'
+  lombokVersion = '1.18.38'
+  jacksonVersion = '2.17.1'
+  commonsIoVersion = '2.16.1'
+  ioCucumberVersion = '7.22.1'
+  serenityCoreVersion = '4.2.34'
+  restAssuredVersion = '5.5.2'
+}
+
+group = 'com.wiremock.utility'
+version = '1.0.0'
+
+java {
+  sourceCompatibility = JavaVersion.VERSION_21
+  targetCompatibility = JavaVersion.VERSION_21
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(21)
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  implementation "org.slf4j:slf4j-api:${slf4jVersion}"
+  implementation 'org.apache.logging.log4j:log4j-slf4j2-impl:2.23.1'
+  implementation "commons-io:commons-io:${commonsIoVersion}"
+  compileOnly "org.projectlombok:lombok:${lombokVersion}"
+  annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+  implementation 'org.hamcrest:hamcrest-all:1.3'
+  implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
+  implementation "org.wiremock:wiremock-standalone:${wiremockVersion}"
+
+  // cucumber
+  implementation "io.cucumber:cucumber-junit-platform-engine:${ioCucumberVersion}"
+  implementation "io.cucumber:cucumber-java:${ioCucumberVersion}"
+}
+
+test {
+  useJUnitPlatform()
+}

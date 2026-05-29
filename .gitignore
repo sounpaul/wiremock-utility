@@ -1,0 +1,12 @@
+.gradle/
+build/
+out/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/.gitignore
+.idea/shelf/
+*.iml
+.idea/
