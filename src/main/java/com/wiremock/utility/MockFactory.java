@@ -18,12 +18,11 @@ public class MockFactory {
     public MockFactory() {
     }
 
-    public static void createMock(String service, String apiMethod, String template, Map<String, String> values) {
+    public static StubMapping createMock(String service, String apiMethod, String template, Map<String, String> values) {
         String templatePath = "mocks/" + service + "/" + apiMethod + "/" + template + "/";
         String nonEscapedBodyStr = getStringFromFile(templatePath + "body.json");
         String bodyStr = new String(JsonStringEncoder.getInstance().quoteAsString(nonEscapedBodyStr));
-        Properties props =
-                loadAndMergeProperties(templatePath + "default.properties", values);
+        Properties props = loadAndMergeProperties(templatePath + "default.properties", values);
         String stubMappingStr = getStringFromFile(templatePath + "mock.json");
         stubMappingStr = stubMappingStr.replace("[[body]]", bodyStr);
 
@@ -32,7 +31,11 @@ public class MockFactory {
                     stubMappingStr.replace("[[" + propName + "]]", translate(props.getProperty(propName)));
         }
 
-        MockServerFactory.wireMock().register(StubMapping.buildFrom(stubMappingStr));
+        StubMapping stubMapping = StubMapping.buildFrom(stubMappingStr);
+        MockServerFactory.wireMock().register(stubMapping);
+        log.debug("Registered stub mapping with id {} for service={}, apiMethod={}, template={}",
+                stubMapping.getId(), service, apiMethod, template);
+        return stubMapping;
     }
 
     private static String getStringFromFile(String filePath) {
