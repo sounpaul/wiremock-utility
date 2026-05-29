@@ -1,6 +1,5 @@
 package com.wiremock.utility.bdd;
 
-import com.wiremock.utility.MockFactory;
 import com.wiremock.utility.MockServerFactory;
 import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
@@ -23,20 +22,17 @@ public class MockSetupGlueSteps {
     }
 
     @Given("{string} service mock for api method {string} using template {string}")
-    public void given_mock_with_template_and_no_data(
-            String service, String apiMethod, String template) {
+    public void given_mock_with_template_and_no_data(String service, String apiMethod, String template) {
         createMockNoData(service, apiMethod, template);
     }
 
     @Given("{string} service mock for api method {string} with data")
-    public void given_mock_with_default_template_and_data(
-            String service, String apiMethod, List<Map<String, String>> valuesList) {
+    public void given_mock_with_default_template_and_data(String service, String apiMethod, List<Map<String, String>> valuesList) {
         createMockWithData(service, apiMethod, "default", valuesList);
     }
 
     @Given("{string} service mock for api method {string} using template {string} with data")
-    public void given_mock_with_template_and_data(
-            String service, String apiMethod, String template, List<Map<String, String>> valuesList) {
+    public void given_mock_with_template_and_data(String service, String apiMethod, String template, List<Map<String, String>> valuesList) {
         createMockWithData(service, apiMethod, template, valuesList);
     }
 

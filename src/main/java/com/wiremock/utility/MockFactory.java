@@ -15,11 +15,10 @@ import org.apache.commons.io.IOUtils;
 @Slf4j
 public class MockFactory {
 
-    private MockFactory() {
+    public MockFactory() {
     }
 
-    public static void createMock(
-            String service, String apiMethod, String template, Map<String, String> values) {
+    public static void createMock(String service, String apiMethod, String template, Map<String, String> values) {
         String templatePath = "mocks/" + service + "/" + apiMethod + "/" + template + "/";
         String nonEscapedBodyStr = getStringFromFile(templatePath + "body.json");
         String bodyStr = new String(JsonStringEncoder.getInstance().quoteAsString(nonEscapedBodyStr));
@@ -51,8 +50,7 @@ public class MockFactory {
             log.error("File does not exist with a .xml or .json extension - {}", filePath);
             return "";
         } else {
-            try (InputStream in =
-                         ClassLoader.getSystemClassLoader().getResourceAsStream(correctFile)) {
+            try (InputStream in = ClassLoader.getSystemClassLoader().getResourceAsStream(correctFile)) {
                 return IOUtils.toString(in, "utf-8");
             } catch (IOException e) {
                 log.error("Error in reading file {}", f.getFile(), e);
@@ -61,13 +59,11 @@ public class MockFactory {
         }
     }
 
-    private static Properties loadAndMergeProperties(
-            String defaultPropsFilePath, Map<String, String> values) {
+    private static Properties loadAndMergeProperties(String defaultPropsFilePath, Map<String, String> values) {
         Properties props = new Properties();
 
         try {
-            props.load(
-                    ClassLoader.getSystemClassLoader().getResourceAsStream(defaultPropsFilePath));
+            props.load(ClassLoader.getSystemClassLoader().getResourceAsStream(defaultPropsFilePath));
         } catch (IOException e) {
             e.printStackTrace();
         }

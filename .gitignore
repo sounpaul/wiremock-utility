@@ -10,3 +10,4 @@ out/
 .idea/shelf/
 *.iml
 .idea/
+wiremock-binary/

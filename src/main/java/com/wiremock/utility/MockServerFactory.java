@@ -24,28 +24,30 @@ public class MockServerFactory {
             String mockServerHost = System.getProperty("wiremock_host", "localhost");
             int mockServerPort = Integer.parseInt(System.getProperty("wiremock_port", "443"));
             String mockServerProtocol = System.getProperty("wiremock_protocol", "https");
+            log.info("Connecting to remote WireMock at {}://{}:{}", mockServerProtocol, mockServerHost, mockServerPort);
+            wireMockClient = new WireMock(mockServerProtocol, mockServerHost, mockServerPort);
 
-            if ("localhost".equalsIgnoreCase(mockServerHost)) {
-                WireMockConfiguration config = WireMockConfiguration.wireMockConfig().port(9081);
-                server = new WireMockServer(config);
-
-                try {
-                    server.start();
-                    log.info("WireMock server started on port {}", defaultLocalPort);
-                } catch (RuntimeException ex) {
-                    if (!(ex instanceof FatalStartupException)) {
-                        throw ex;
-                    }
-                    log.warn("WireMock server already running on port {}", defaultLocalPort);
-                }
-
-                wireMockClient = new WireMock(9081);
-                mockServerPort = 9081;
-                mockServerProtocol = "http";
-            } else {
-                log.info("Connecting to remote WireMock at {}://{}:{}", mockServerProtocol, mockServerHost, mockServerPort);
-                wireMockClient = new WireMock(mockServerProtocol, mockServerHost, mockServerPort);
-            }
+//            if ("localhost".equalsIgnoreCase(mockServerHost)) {
+//                WireMockConfiguration config = WireMockConfiguration.wireMockConfig().port(9081);
+//                server = new WireMockServer(config);
+//
+//                try {
+//                    server.start();
+//                    log.info("WireMock server started on port {}", defaultLocalPort);
+//                } catch (RuntimeException ex) {
+//                    if (!(ex instanceof FatalStartupException)) {
+//                        throw ex;
+//                    }
+//                    log.warn("WireMock server already running on port {}", defaultLocalPort);
+//                }
+//
+//                wireMockClient = new WireMock(9081);
+//                mockServerPort = 9081;
+//                mockServerProtocol = "http";
+//            } else {
+//                log.info("Connecting to remote WireMock at {}://{}:{}", mockServerProtocol, mockServerHost, mockServerPort);
+//                wireMockClient = new WireMock(mockServerProtocol, mockServerHost, mockServerPort);
+//            }
 
             mockBaseUrl = mockServerProtocol + "://" + mockServerHost + ":" + mockServerPort;
             log.info("WireMock base URL set to {}", mockBaseUrl);
