@@ -18,7 +18,7 @@ public class MockFactory {
     public MockFactory() {
     }
 
-    public static StubMapping createMock(String service, String apiMethod, String template, Map<String, String> values) {
+    public static void createMock(String service, String apiMethod, String template, Map<String, String> values) {
         String templatePath = "mocks/" + service + "/" + apiMethod + "/" + template + "/";
         String nonEscapedBodyStr = getStringFromFile(templatePath + "body.json");
         String bodyStr = new String(JsonStringEncoder.getInstance().quoteAsString(nonEscapedBodyStr));
@@ -35,7 +35,6 @@ public class MockFactory {
         MockServerFactory.wireMock().register(stubMapping);
         log.debug("Registered stub mapping with id {} for service={}, apiMethod={}, template={}",
                 stubMapping.getId(), service, apiMethod, template);
-        return stubMapping;
     }
 
     private static String getStringFromFile(String filePath) {

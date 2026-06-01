@@ -30,4 +30,14 @@ public class BookingAPIStepDef {
         bookingAPISteps.validateResponseBody(responseBody);
     }
 
+    @And("validate {string} endpoint of booking-svc-api is called {int} times")
+    public void booking_svc_api_payload_called_validation(String endpointName, int timesCalled, DataTable dataTable) {
+        bookingAPISteps.validateBookingPayload(timesCalled, dataTable);
+    }
+
+    @When("the create-booking request contains below payload")
+    public void booking_api_init_payload(DataTable dataTable) {
+        bookingAPISteps.initCreateBookingRequest(dataTable);
+    }
+
 }

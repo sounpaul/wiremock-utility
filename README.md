@@ -92,7 +92,7 @@ wiremock-utility/
 │   │   │   ├── MockServerFactory.java        ← WireMock client/server singleton
 │   │   │   ├── MockFactory.java              ← Template loader & stub registrar
 │   │   │   └── bdd/
-│   │   │       └── MockSetupGlueSteps.java   ← Cucumber @Given / @Before / @After
+│   │   │       └── MockSetupGlueSteps.java   ← Cucumber @Before (reset) / @Given
 │   │   └── resources/
 │   │       └── logback.xml                   ← Main logging config
 │   └── test/
@@ -129,7 +129,7 @@ Feature file (.feature)
         ▼
 BookingAPIRunner               ← JUnit 5 @Suite — discovers & runs all .feature files
         │
-        ├─── MockSetupGlueSteps  (@Before / @After / @Given)
+        ├─── MockSetupGlueSteps  (@Before resets all mappings / @Given registers stubs)
         │         │
         │         │  createMock(service, apiMethod, template, values)
         │         ▼
@@ -184,15 +184,15 @@ WireMockServer server = MockServerFactory.getWireMockServer();
 
 **Package:** `com.wiremock.utility`
 
-Loads stub definitions from classpath resources, performs token substitution, and registers them with the WireMock client. Returns the registered `StubMapping` so callers can track and clean up individual stubs.
+Loads stub definitions from classpath resources, performs token substitution, and registers them with the WireMock client.
 
 ```java
 // Register a stub with no dynamic data (uses default.properties only)
-StubMapping stub = MockFactory.createMock("booking-svc", "get-booking", "default", null);
+MockFactory.createMock("booking-svc", "get-booking", "default", null);
 
 // Register a stub with runtime overrides
 Map<String, String> overrides = Map.of("msg", "custom-message");
-StubMapping stub = MockFactory.createMock("booking-svc", "get-booking", "success", overrides);
+MockFactory.createMock("booking-svc", "get-booking", "success", overrides);
 ```
 
 **How it works:**
@@ -202,7 +202,7 @@ StubMapping stub = MockFactory.createMock("booking-svc", "get-booking", "success
 3. Reads `default.properties` and merges any runtime `values` map on top.
 4. Reads `mock.json` and replaces `[[body]]` with the encoded body string.
 5. Replaces every `[[propertyName]]` token with the value from merged properties, passing each value through `translate()`.
-6. Registers the stub via `MockServerFactory.wireMock().register(StubMapping.buildFrom(...))` and returns the `StubMapping`.
+6. Registers the stub via `MockServerFactory.wireMock().register(StubMapping.buildFrom(...))`.
 
 ---
 
@@ -210,12 +210,11 @@ StubMapping stub = MockFactory.createMock("booking-svc", "get-booking", "success
 
 **Package:** `com.wiremock.utility.bdd`
 
-Cucumber step definitions that delegate to `MockFactory.createMock()`. Each registered stub is tracked internally and removed individually after each scenario.
+Cucumber step definitions that delegate to `MockFactory.createMock()`. Before each scenario all existing WireMock stub mappings are reset, ensuring every scenario starts with a clean server state regardless of the previous scenario's outcome.
 
-| Annotation | Step Pattern |
-|-----------|-------------|
-| `@Before` | *(runs before every scenario)* — clears the internal stub tracking list |
-| `@After` | *(runs after every scenario)* — removes only the stubs registered during that scenario |
+| Annotation | Behaviour |
+|-----------|-----------|
+| `@Before` | Calls `wireMock().resetMappings()` — wipes **all** stub mappings from the WireMock server before each scenario. Guarantees a clean state whether the previous scenario passed or failed. |
 | `@Given` | `"{string} service mock for api method {string}"` |
 | `@Given` | `"{string} service mock for api method {string} using template {string}"` |
 | `@Given` | `"{string} service mock for api method {string} with data"` |
@@ -405,10 +404,13 @@ public class BookingAPIRunner {}
 
 **File:** `src/test/resources/features/MockUtilityTest.feature`
 
+The feature covers all four `@Given` step patterns provided by this library, plus a payload-matching scenario that uses WireMock call-count verification.
+
 ```gherkin
 Feature: Mock utility test feature
 
-  Scenario Outline: Validate GET booking API
+  # Pattern 1 — named template, no data override
+  Scenario Outline: Validate GET booking API when downstream returns 400 & 500
     Given "booking-svc" service mock for api method "get-booking" using template "<template>"
     When booking details will be fetched for "<bookingId>"
     When "get-booking" endpoint is invoked
@@ -419,22 +421,90 @@ Feature: Mock utility test feature
       | template              | responseCode | responseBody          | bookingId |
       | bad-request           | 400          | bad-request           | 1         |
       | internal-server-error | 500          | internal-server-error | 2         |
+
+
+  # Pattern 2 — default template, no data override
+  Scenario Outline: Validate GET booking API when downstream returns 401
+    Given "booking-svc" service mock for api method "get-booking"
+    When booking details will be fetched for "<bookingId>"
+    When "get-booking" endpoint is invoked
+    Then the response code should be "<responseCode>"
+    And the response body should contain message "<responseBody>"
+
+    Examples:
+      | responseCode | responseBody        | bookingId |
+      | 401          | authorization-error | 3         |
+
+
+  # Pattern 3 — named template + data table override
+  Scenario Outline: Validate GET booking API when downstream returns 400 & 500 while setting up mock with data
+    Given "booking-svc" service mock for api method "get-booking" using template "<template>" with data
+      | msg   |
+      | <msg> |
+    When booking details will be fetched for "<bookingId>"
+    When "get-booking" endpoint is invoked
+    Then the response code should be "<responseCode>"
+    And the response body should contain message "<responseBody>"
+
+    Examples:
+      | template              | responseCode | responseBody              | bookingId | msg                       |
+      | bad-request           | 400          | bad-request-new           | 4         | bad-request-new           |
+      | internal-server-error | 500          | internal-server-error-new | 5         | internal-server-error-new |
+
+
+  # Pattern 4 — default template + data table override
+  Scenario Outline: Validate GET booking API when downstream returns 401 while setting up mock with data
+    Given "booking-svc" service mock for api method "get-booking" with data
+      | msg   |
+      | <msg> |
+    When booking details will be fetched for "<bookingId>"
+    When "get-booking" endpoint is invoked
+    Then the response code should be "<responseCode>"
+    And the response body should contain message "<responseBody>"
+
+    Examples:
+      | responseCode | responseBody            | bookingId | msg                     |
+      | 401          | authorization-error-new | 6         | authorization-error-new |
+
+
+  # WireMock call-count verification — uses @CreateBooking tag for selective execution
+  @CreateBooking
+  Scenario Outline: Validate CREATE booking API payload when downstream returns 200
+    Given "booking-svc" service mock for api method "create-booking"
+    When the create-booking request contains below payload
+      | firstname | lastname | totalprice | depositpaid | checkin    | checkout   | additionalneeds |
+      | John      | Smith    | 200        | true        | 2026-06-01 | 2026-06-05 | breakfast       |
+    When "create-booking" endpoint is invoked
+    Then the response code should be "<responseCode>"
+    And validate "create-booking" endpoint of booking-svc-api is called 1 times
+      | firstname | lastname | totalprice | depositpaid | checkin    | checkout   | additionalneeds |
+      | John      | Smith    | 200        | true        | 2026-06-01 | 2026-06-05 | breakfast       |
+
+    Examples:
+      | responseCode |
+      | 200          |
 ```
 
-The `Given` step is provided by `MockSetupGlueSteps` from this library. The `When` and `Then` steps are implemented in the project's own step definition classes under `com.wiremock.utility.test.stepdef`.
+The `Given` steps are provided by `MockSetupGlueSteps` from this library. The `When`, `Then`, and `And validate` steps are implemented in the project's own step definition classes under `com.wiremock.utility.test.stepdef`.
 
 ---
 
 ### Step Definitions
 
-Place project-specific step definitions under `src/test/java/com/wiremock/utility/test/steps/` (or `stepdef/`). The `Given` mock setup step is already provided by the library — only `@When` and `@Then` steps need to be implemented per project.
+Place project-specific step definitions under `src/test/java/com/wiremock/utility/test/steps/` (or `stepdef/`). All `Given` mock-setup steps are already provided by the library — only `@When`, `@Then`, and custom `@And` steps need to be implemented per project.
 
 ```java
 package com.wiremock.utility.test.steps;
 
 import com.wiremock.utility.MockServerFactory;
+import io.cucumber.datatable.DataTable;
+import io.cucumber.java.en.And;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+
+import java.util.Map;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 public class BookingSteps {
 
@@ -452,6 +522,16 @@ public class BookingSteps {
         response = RestAssured.get(baseUrl + "/booking/" + bookingId);
     }
 
+    @When("the create-booking request contains below payload")
+    public void theCreateBookingRequestContainsBelowPayload(DataTable table) {
+        Map<String, String> payload = table.asMaps(String.class, String.class).getFirst();
+        String baseUrl = MockServerFactory.getBaseUrl();
+        response = RestAssured.given()
+                .contentType("application/json")
+                .body(payload)
+                .post(baseUrl + "/booking");
+    }
+
     @Then("the response code should be {string}")
     public void theResponseCodeShouldBe(String expectedCode) {
         response.then().statusCode(Integer.parseInt(expectedCode));
@@ -460,6 +540,20 @@ public class BookingSteps {
     @Then("the response body should contain message {string}")
     public void theResponseBodyShouldContainMessage(String expectedMessage) {
         response.then().body("msg", equalTo(expectedMessage));
+    }
+
+    // WireMock call-count verification — verifies the endpoint was called exactly N times
+    // with the expected request payload from the data table
+    @And("validate {string} endpoint of booking-svc-api is called {int} times")
+    public void validateEndpointCalledNTimes(String endpoint, int times, DataTable table) {
+        Map<String, String> expectedPayload = table.asMaps(String.class, String.class).getFirst();
+        MockServerFactory.wireMock().verifyThat(
+                times,
+                postRequestedFor(urlPathEqualTo("/" + endpoint))
+                        .withRequestBody(matchingJsonPath("$.firstname",  equalTo(expectedPayload.get("firstname"))))
+                        .withRequestBody(matchingJsonPath("$.lastname",   equalTo(expectedPayload.get("lastname"))))
+                        .withRequestBody(matchingJsonPath("$.totalprice", equalTo(expectedPayload.get("totalprice"))))
+        );
     }
 }
 ```
@@ -523,7 +617,7 @@ Overrides the main `logback.xml` during test runs. Sets `com.wiremock.utility.te
 **Run with a specific tag:**
 
 ```bash
-.\gradlew.bat test -Dtags="@booking"
+.\gradlew.bat test -Dtags="@CreateBooking"
 .\gradlew.bat test -Dtags="@smoke and not @wip"
 ```
 
@@ -625,48 +719,51 @@ Given "bank-fn-svc" service mock for api method "callback-account-info" using te
 
 ### Stub Lifecycle
 
-The library manages stub cleanup automatically — no manual teardown is needed:
+`MockSetupGlueSteps` handles WireMock state automatically — no manual teardown is needed.
 
 | Hook | What happens |
 |------|-------------|
-| `@Before` | Clears the internal `scenarioStubs` tracking list. No stubs on the WireMock server are touched. |
-| `@After` | Calls `wireMock().removeStubMapping(stub)` for every stub registered during the scenario. Pre-existing stubs on a shared/remote server are **not** affected. |
+| `@Before` | Calls `wireMock().resetMappings()` — wipes **all** stub mappings from the WireMock server before every scenario. This guarantees a clean state whether the previous scenario passed, failed, or was aborted. |
+
+Because `@Before` resets mappings before each scenario, stubs registered in a previous scenario (or from a previously failed test run) never bleed into the current scenario. This design is intentionally simple — no per-stub tracking is required.
 
 ---
 
 ## Programmatic Usage
 
-For non-BDD tests (plain JUnit 5) call `MockFactory` directly:
+For non-BDD tests (plain JUnit 5) call `MockFactory` directly. Reset WireMock mappings in `@BeforeEach` to match the same clean-slate behaviour provided by `MockSetupGlueSteps`.
 
 ```java
 import com.wiremock.utility.MockFactory;
 import com.wiremock.utility.MockServerFactory;
-import com.github.tomakehurst.wiremock.stubbing.StubMapping;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import java.util.ArrayList;
-import java.util.List;
 
 class BookingServiceTest {
 
-    private final List<StubMapping> stubs = new ArrayList<>();
-
-    @AfterEach
-    void cleanup() {
-        stubs.forEach(stub -> MockServerFactory.wireMock().removeStubMapping(stub));
-        stubs.clear();
+    @BeforeEach
+    void resetMocks() {
+        // mirrors the @Before behaviour in MockSetupGlueSteps
+        MockServerFactory.wireMock().resetMappings();
     }
 
     @Test
     void shouldReturnSuccessResponse() {
-        stubs.add(MockFactory.createMock("booking-svc", "get-booking", "success", null));
+        MockFactory.createMock("booking-svc", "get-booking", "success", null);
         // call service at MockServerFactory.getBaseUrl() + "/booking/123"
     }
 
     @Test
     void shouldHandleBadRequest() {
-        stubs.add(MockFactory.createMock("booking-svc", "get-booking", "bad-request", null));
+        MockFactory.createMock("booking-svc", "get-booking", "bad-request", null);
         // assert 400 response
+    }
+
+    @Test
+    void shouldReturnCustomMessage() {
+        Map<String, String> overrides = Map.of("msg", "custom-error");
+        MockFactory.createMock("booking-svc", "get-booking", "bad-request", overrides);
+        // assert 400 response with body {"msg":"custom-error"}
     }
 }
 ```

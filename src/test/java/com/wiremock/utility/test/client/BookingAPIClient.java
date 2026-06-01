@@ -1,5 +1,6 @@
 package com.wiremock.utility.test.client;
 
+import com.wiremock.utility.test.model.BookingRequest;
 import com.wiremock.utility.test.utils.TestConstants;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
@@ -17,9 +18,9 @@ public class BookingAPIClient {
     }
 
 
-//    public Response addBooking(EmployeeRequest employeeRequest) {
-//        return requestSpecification.headers(Map.of("Content-Type", "application/json")).body(employeeRequest).post(BDDConstants.ADD_EMPLOYEE_ENDPOINT);
-//    }
+    public Response createBooking(BookingRequest bookingRequest) {
+        return requestSpecification.headers(Map.of("Content-Type", "application/json")).body(bookingRequest).post(TestConstants.ADD_BOOKING_ENDPOINT);
+    }
 
     public Response getEmployeeById(String bookingId) {
         return requestSpecification.headers(Map.of("Content-Type", "application/json")).pathParam("bookingId", bookingId).get(TestConstants.GET_BOOKING_ENDPOINT);
