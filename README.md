@@ -1,6 +1,8 @@
 # WireMock Utility
 
-A shared Java library that simplifies setting up and managing [WireMock](https://wiremock.org/) stub servers in automated test suites. It provides a file-driven templating system for defining mock responses, a singleton server factory, and ready-to-use Cucumber BDD step definitions powered by [Serenity BDD](https://serenity-bdd.info/).
+A shared Java library that simplifies setting up and managing [WireMock](https://wiremock.org/) stub servers in automated test suites. It provides a file-driven templating system for defining mock responses, a singleton client factory, and ready-to-use Cucumber BDD step definitions powered by [Serenity BDD](https://serenity-bdd.info/).
+
+> **Important:** `MockServerFactory` does **not** start an in-process WireMock server — it only manages a `WireMock` API **client**. A WireMock instance (run locally as a separate process/container, or remote) must already be listening at the configured host/port before stubs can be registered. See [MockServerFactory](#mockserverfactory).
 
 ---
 
@@ -89,7 +91,7 @@ wiremock-utility/
 ├── src/
 │   ├── main/
 │   │   ├── java/com/wiremock/utility/
-│   │   │   ├── MockServerFactory.java        ← WireMock client/server singleton
+│   │   │   ├── MockServerFactory.java        ← WireMock API client singleton
 │   │   │   ├── MockFactory.java              ← Template loader & stub registrar
 │   │   │   └── bdd/
 │   │   │       └── MockSetupGlueSteps.java   ← Cucumber @Before (reset) / @Given
@@ -107,7 +109,7 @@ wiremock-utility/
 │           ├── mocks/
 │           │   └── booking-svc/
 │           │       └── get-booking/
-│           │           ├── success/           ← mock.json, body.json, default.properties
+│           │           ├── default/           ← mock.json, body.json, default.properties
 │           │           ├── bad-request/
 │           │           └── internal-server-error/
 │           ├── junit-platform.properties      ← Cucumber parallel / execution config
@@ -139,10 +141,11 @@ BookingAPIRunner               ← JUnit 5 @Suite — discovers & runs all .feat
         │         │
         │         │  register(StubMapping)
         │         ▼
-        │    MockServerFactory   ← Singleton WireMock client / server manager
+        │    MockServerFactory   ← Singleton WireMock API client manager
         │         │
         │         ▼
-        │    WireMock server     ← Local (auto-started on port 9081) or remote
+        │    WireMock server     ← Must already be running (local process/container or remote) —
+        │                            this library does not start one
         │
         └─── Project step defs  (@When / @Then — HTTP calls, assertions, etc.)
                   │
@@ -159,24 +162,26 @@ BookingAPIRunner               ← JUnit 5 @Suite — discovers & runs all .feat
 
 **Package:** `com.wiremock.utility`
 
-A thread-safe singleton that manages the WireMock client connection. On the first call to `wireMock()` it reads system properties to decide whether to connect to a local or remote WireMock instance.
+A thread-safe singleton that manages a `WireMock` API **client** connection. On the first call to `wireMock()` it reads system properties and connects to whatever WireMock instance they point to.
 
 ```java
 // Get the WireMock client (initialises on first call)
 WireMock client = MockServerFactory.wireMock();
 
-// Get the base URL of the mock server (e.g. "http://localhost:9081")
+// Get the base URL of the mock server (e.g. "https://localhost:443" by default)
 String baseUrl = MockServerFactory.getBaseUrl();
 
-// Get the WireMockServer instance (only non-null when running locally)
+// Get the WireMockServer instance — currently always null; no in-process server is ever started
 WireMockServer server = MockServerFactory.getWireMockServer();
 ```
 
 **Behaviour:**
 
-- Reads `wiremock_host` system property (default: `localhost`).
-- If host is `localhost`: creates and starts a `WireMockServer` on port **9081**. If the server is already running (`FatalStartupException`), it logs a warning and continues.
-- If host is anything else: connects to the remote WireMock server using `wiremock_protocol`, `wiremock_host`, and `wiremock_port` — no local server is started.
+- Reads `wiremock_host` (default: `localhost`), `wiremock_port` (default: `443`), and `wiremock_protocol` (default: `https`) system properties.
+- Builds and memoizes a `WireMock` API client pointed at `{wiremock_protocol}://{wiremock_host}:{wiremock_port}` — it **always** connects to that address as a client, regardless of whether the host is `localhost` or remote.
+- **No local `WireMockServer` is ever started by this class.** A WireMock instance must already be running at the configured address (started separately as a standalone process/container, or an existing remote server) before any stub can be registered.
+- `getWireMockServer()` always returns `null` in the current implementation — it exists for API shape but the underlying `server` field is never assigned.
+- `wireMock()` is `synchronized` and caches the client in a static field, so the first call's system-property values apply for the lifetime of the JVM/test run.
 
 ---
 
@@ -192,7 +197,7 @@ MockFactory.createMock("booking-svc", "get-booking", "default", null);
 
 // Register a stub with runtime overrides
 Map<String, String> overrides = Map.of("msg", "custom-message");
-MockFactory.createMock("booking-svc", "get-booking", "success", overrides);
+MockFactory.createMock("booking-svc", "get-booking", "bad-request", overrides);
 ```
 
 **How it works:**
@@ -237,21 +242,21 @@ src/test/resources/
                 └── default.properties  ← Default token values
 ```
 
-**Example** — `booking-svc` / `get-booking` with three templates:
+**Example** — `booking-svc` / `get-booking` with three templates (`default` is the one used when a feature step omits `using template "..."`):
 
 ```
 mocks/
 └── booking-svc/
     └── get-booking/
-        ├── success/
+        ├── default/                 (status 401)
         │   ├── mock.json
         │   ├── body.json
-        │   └── default.properties   (msg=data-fetched-successfully)
-        ├── bad-request/
+        │   └── default.properties   (msg=authorization-error)
+        ├── bad-request/             (status 400)
         │   ├── mock.json
         │   ├── body.json
         │   └── default.properties   (msg=bad-request)
-        └── internal-server-error/
+        └── internal-server-error/   (status 500)
             ├── mock.json
             ├── body.json
             └── default.properties   (msg=internal-server-error)
@@ -279,7 +284,7 @@ A standard WireMock stub mapping. Use `[[body]]` where the response body should 
 }
 ```
 
-The `status` field in each template drives the HTTP response code — `200` for `success`, `400` for `bad-request`, `500` for `internal-server-error`.
+The `status` field in each template drives the HTTP response code — `401` for `default`, `400` for `bad-request`, `500` for `internal-server-error` (per the `booking-svc` / `get-booking` example above; the `create-booking` / `default` template returns `200`).
 
 ---
 
@@ -300,8 +305,8 @@ The raw (unescaped) JSON response body. Write it as plain JSON — `MockFactory`
 Key-value pairs providing default values for all `[[tokens]]` used in `mock.json` and `body.json`. Values can be overridden at runtime by passing a `Map<String, String>` to `createMock()`.
 
 ```properties
-# success/default.properties
-msg=data-fetched-successfully
+# default/default.properties
+msg=authorization-error
 
 # bad-request/default.properties
 msg=bad-request
@@ -341,11 +346,11 @@ Property values pass through a `translate()` function before substitution, suppo
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `wiremock_host` | `localhost` | WireMock server hostname. Set to a remote host to skip local server startup. |
-| `wiremock_port` | `9081` | WireMock server port. |
-| `wiremock_protocol` | `http` | Protocol (`http` or `https`). |
+| `wiremock_host` | `localhost` | WireMock server hostname to connect the client to. |
+| `wiremock_port` | `443` | WireMock server port. |
+| `wiremock_protocol` | `https` | Protocol (`http` or `https`). |
 
-These are also configurable per environment in `serenity.conf` (see [Serenity Configuration](#serenity-configuration)).
+These are just the built-in defaults in `MockServerFactory` when no property is set — they do **not** imply a server is auto-started at that address. A WireMock instance must already be reachable at the resolved `{protocol}://{host}:{port}` (see the [MockServerFactory](#mockserverfactory) note above). These properties are also configurable per environment in `serenity.conf` (see [Serenity Configuration](#serenity-configuration)) — e.g. the `default` environment shipped in this repo's tests overrides them to `http://localhost:9090`.
 
 ---
 
@@ -577,6 +582,8 @@ environments {
 }
 ```
 
+`Hooks` (`src/test/java/.../hooks/Hooks.java`) copies these values into JVM system properties (`app.base.url`, `wiremock_host`, `wiremock_port`, `wiremock_protocol`) before every scenario. Note that `app.baseURL` (what the REST client under test calls) and `wiremock_host`/`wiremock_port` (what `MockServerFactory` connects the stub-registration client to) are configured independently here — since this library never auto-starts a local WireMock server, both must actually resolve to a **running** WireMock instance for the demo suite's HTTP calls to reach the stubs registered via `MockFactory`.
+
 Add further environments (`staging`, `prod`, etc.) as additional blocks and select them at runtime:
 
 ```bash
@@ -748,9 +755,9 @@ class BookingServiceTest {
     }
 
     @Test
-    void shouldReturnSuccessResponse() {
-        MockFactory.createMock("booking-svc", "get-booking", "success", null);
-        // call service at MockServerFactory.getBaseUrl() + "/booking/123"
+    void shouldReturnDefaultAuthorizationErrorResponse() {
+        MockFactory.createMock("booking-svc", "get-booking", "default", null);
+        // call service at MockServerFactory.getBaseUrl() + "/booking/123" → 401, {"msg":"authorization-error"}
     }
 
     @Test
